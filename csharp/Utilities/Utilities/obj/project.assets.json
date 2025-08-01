@@ -1,0 +1,117 @@
+{
+  "version": 3,
+  "targets": {
+    "net9.0": {
+      "Sqids/3.1.0": {
+        "type": "package",
+        "compile": {
+          "lib/net8.0/Sqids.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net8.0/Sqids.dll": {
+            "related": ".xml"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "Sqids/3.1.0": {
+      "sha512": "Fi3/WN1s/bszAIX888hcSKYnDfdPuJD4TijskGmOxGRnA2hvngWb9IbBJPizxaOi7VpD0Nn8NHJh7i1ks/OyPw==",
+      "type": "package",
+      "path": "sqids/3.1.0",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "icon.png",
+        "lib/net6.0/Sqids.dll",
+        "lib/net6.0/Sqids.xml",
+        "lib/net7.0/Sqids.dll",
+        "lib/net7.0/Sqids.xml",
+        "lib/net8.0/Sqids.dll",
+        "lib/net8.0/Sqids.xml",
+        "lib/netstandard2.0/Sqids.dll",
+        "lib/netstandard2.0/Sqids.xml",
+        "nuget-readme.md",
+        "sqids.3.1.0.nupkg.sha512",
+        "sqids.nuspec"
+      ]
+    }
+  },
+  "projectFileDependencyGroups": {
+    "net9.0": [
+      "Sqids >= 3.1.0"
+    ]
+  },
+  "packageFolders": {
+    "/home/thomas/.nuget/packages/": {}
+  },
+  "project": {
+    "version": "1.0.0",
+    "restore": {
+      "projectUniqueName": "/home/thomas/repos/sandbox/csharp/Utilities/Utilities/Utilities.csproj",
+      "projectName": "Utilities",
+      "projectPath": "/home/thomas/repos/sandbox/csharp/Utilities/Utilities/Utilities.csproj",
+      "packagesPath": "/home/thomas/.nuget/packages/",
+      "outputPath": "/home/thomas/repos/sandbox/csharp/Utilities/Utilities/obj/",
+      "projectStyle": "PackageReference",
+      "configFilePaths": [
+        "/home/thomas/.nuget/NuGet/NuGet.Config"
+      ],
+      "originalTargetFrameworks": [
+        "net9.0"
+      ],
+      "sources": {
+        "/usr/lib64/dotnet/library-packs": {},
+        "https://api.nuget.org/v3/index.json": {}
+      },
+      "frameworks": {
+        "net9.0": {
+          "targetAlias": "net9.0",
+          "projectReferences": {}
+        }
+      },
+      "warningProperties": {
+        "warnAsError": [
+          "NU1605"
+        ]
+      },
+      "restoreAuditProperties": {
+        "enableAudit": "true",
+        "auditLevel": "low",
+        "auditMode": "direct"
+      },
+      "SdkAnalysisLevel": "9.0.100"
+    },
+    "frameworks": {
+      "net9.0": {
+        "targetAlias": "net9.0",
+        "dependencies": {
+          "Sqids": {
+            "target": "Package",
+            "version": "[3.1.0, )"
+          }
+        },
+        "imports": [
+          "net461",
+          "net462",
+          "net47",
+          "net471",
+          "net472",
+          "net48",
+          "net481"
+        ],
+        "assetTargetFallback": true,
+        "warn": true,
+        "frameworkReferences": {
+          "Microsoft.NETCore.App": {
+            "privateAssets": "all"
+          }
+        },
+        "runtimeIdentifierGraphPath": "/usr/lib64/dotnet/sdk/9.0.108/PortableRuntimeIdentifierGraph.json"
+      }
+    }
+  }
+}
