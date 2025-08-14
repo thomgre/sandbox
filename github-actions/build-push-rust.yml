@@ -1,0 +1,206 @@
+# Workflow Template for building multi-platform (Containerized) Rust App
+name: "[Template] Build & Push Rust App"
+
+on:
+  workflow_call:
+    inputs:
+      image-name:
+        required: true
+        type: string
+      docker-context:
+        required: true
+        type: string
+    secrets:
+      registry_login_server:
+        required: true
+      registry_username:
+        required: true
+      registry_password:
+        required: true
+
+jobs:
+  # Build each architecture separately and push with architecture suffix
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+        include:
+          - platform: linux/amd64
+            arch: amd64
+          - platform: linux/arm64
+            arch: arm64
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Docker
+      uses: docker/setup-docker-action@v4
+      with:
+        daemon-config: |
+          {
+            "debug": true,
+            "features": {
+              "containerd-snapshotter": true
+            }
+          }
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+      with:
+        platforms: ${{ matrix.platform }}
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: "Login to Azure Container Registry (ACR)"
+      uses: azure/docker-login@v1
+      with:
+        login-server: ${{ secrets.registry_login_server }}
+        username: ${{ secrets.registry_username }}
+        password: ${{ secrets.registry_password }}
+
+    - name: Generate tags for this architecture
+      id: tags
+      run: |
+        # Generate base tag
+        if [[ "${{ github.ref_type }}" == "tag" ]]; then
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          BASE_TAG="${TAG_NAME}"
+        elif [[ "${{ github.ref_name }}" == "main" ]]; then
+          BASE_TAG="latest"
+        else
+          BRANCH_NAME=$(echo "${{ github.ref_name }}" | sed 's/[^a-zA-Z0-9._-]/-/g')
+          BASE_TAG="${BRANCH_NAME}"
+        fi
+        
+        # Create architecture-specific tag
+        ARCH_TAG="${BASE_TAG}-${{ matrix.arch }}"
+        FULL_TAG="${{ secrets.registry_login_server }}/${{ inputs.image-name }}:${ARCH_TAG}"
+        
+        echo "arch_tag=${ARCH_TAG}" >> $GITHUB_OUTPUT
+        echo "full_tag=${FULL_TAG}" >> $GITHUB_OUTPUT
+        echo "base_tag=${BASE_TAG}" >> $GITHUB_OUTPUT
+
+    - name: Build and push architecture-specific image
+      if: github.event_name != 'pull_request'
+      uses: docker/build-push-action@v5
+      with:
+        context: ${{ inputs.docker-context }}
+        #file: ./cities/Dockerfile
+        platforms: ${{ matrix.platform }}
+        push: true
+        tags: ${{ steps.tags.outputs.full_tag }}
+        build-args: |
+          BUILDTIME=${{ github.run_id }}
+          VERSION=${{ steps.tags.outputs.base_tag }}
+
+    - name: Build for PR (no push)
+      if: github.event_name == 'pull_request'
+      uses: docker/build-push-action@v5
+      with:
+        context: ${{ inputs.docker-context }}
+        #file: ./cities/Dockerfile
+        platforms: ${{ matrix.platform }}
+        push: false
+        tags: ${{ secrets.registry_login_server }}/${{ inputs.image-name }}:pr-${{ github.event.number }}-${{ matrix.arch }}
+
+    - name: Save tag info
+      if: github.event_name != 'pull_request'
+      run: |
+        mkdir -p /tmp/tags
+        echo "${{ steps.tags.outputs.full_tag }}" > "/tmp/tags/${{ matrix.arch }}"
+        echo "${{ steps.tags.outputs.base_tag }}" > "/tmp/tags/base_tag"
+
+    - name: Upload tag info
+      if: github.event_name != 'pull_request'
+      uses: actions/upload-artifact@v4
+      with:
+        name: tags-${{ matrix.arch }}
+        path: /tmp/tags/*
+        retention-days: 1
+
+  # Create multi-platform manifest
+  create-manifest:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name != 'pull_request'
+    steps:
+    - name: Download tag info
+      uses: actions/download-artifact@v4
+      with:
+        path: /tmp/tags
+        pattern: tags-*
+        merge-multiple: true
+
+    - name: Log in to Azure Container Registry
+      uses: azure/docker-login@v1
+      with:
+        login-server: ${{ secrets.registry_login_server }}
+        username: ${{ secrets.registry_username }}
+        password: ${{ secrets.registry_password }}
+
+    - name: Create and push manifest
+      run: |
+        # Read the base tag
+        BASE_TAG=$(cat /tmp/tags/base_tag | head -1)
+        
+        # Read architecture-specific tags
+        AMD64_TAG=$(cat /tmp/tags/amd64)
+        ARM64_TAG=$(cat /tmp/tags/arm64)
+        
+        # Create manifest
+        MANIFEST_TAG="${{ secrets.registry_login_server }}/${{ inputs.image-name }}:${BASE_TAG}"
+        
+        echo "Creating manifest: ${MANIFEST_TAG}"
+        echo "  AMD64: ${AMD64_TAG}"
+        echo "  ARM64: ${ARM64_TAG}"
+        
+        # Create and push the manifest
+        docker manifest create ${MANIFEST_TAG} \
+          ${AMD64_TAG} \
+          ${ARM64_TAG}
+        
+        # Annotate the manifest with platform info
+        docker manifest annotate ${MANIFEST_TAG} ${AMD64_TAG} --os linux --arch amd64
+        docker manifest annotate ${MANIFEST_TAG} ${ARM64_TAG} --os linux --arch arm64
+        
+        # Push the manifest
+        docker manifest push ${MANIFEST_TAG}
+        
+        # If this is main branch, also create/update latest manifest
+        if [[ "${{ github.ref_name }}" == "main" && "${BASE_TAG}" != "latest" ]]; then
+          LATEST_TAG="${{ secrets.registry_login_server }}/${{ inputs.image-name }}:latest"
+          docker manifest create ${LATEST_TAG} \
+            ${AMD64_TAG} \
+            ${ARM64_TAG}
+          docker manifest annotate ${LATEST_TAG} ${AMD64_TAG} --os linux --arch amd64
+          docker manifest annotate ${LATEST_TAG} ${ARM64_TAG} --os linux --arch arm64
+          docker manifest push ${LATEST_TAG}
+        fi
+
+    - name: Verify manifest
+      run: |
+        BASE_TAG=$(cat /tmp/tags/base_tag | head -1)
+        MANIFEST_TAG="${{ secrets.registry_login_server }}/${{ inputs.image-name }}:${BASE_TAG}"
+        
+        echo "### Verifying manifest: ${MANIFEST_TAG}"
+        docker manifest inspect ${MANIFEST_TAG}
+
+    - name: Display build summary
+      run: |
+        BASE_TAG=$(cat /tmp/tags/base_tag | head -1)
+        echo "### 🚀 Multi-Architecture Image Built Successfully!" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Registry:** ${{ secrets.registry_login_server }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Image:** ${{ inputs.image-name }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Tag:** ${BASE_TAG}" >> $GITHUB_STEP_SUMMARY
+        echo "**Platforms:** linux/amd64, linux/arm64" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Individual Images:**" >> $GITHUB_STEP_SUMMARY
+        echo "- AMD64: $(cat /tmp/tags/amd64)" >> $GITHUB_STEP_SUMMARY
+        echo "- ARM64: $(cat /tmp/tags/arm64)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Multi-platform manifest:** ${{ secrets.registry_login_server }}/${{ inputs.image-name }}:${BASE_TAG}" >> $GITHUB_STEP_SUMMARY
