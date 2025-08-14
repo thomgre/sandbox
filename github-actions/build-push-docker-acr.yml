@@ -1,0 +1,53 @@
+name: Build and Publish ASP.NET Core API (Docker Image)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "*"
+    paths:
+      - "src/**"
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "Login via Azure CLI"
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.ACR_AZURE_CREDENTIALS }}
+
+      # - name: Docker meta
+      #   id: meta
+      #   uses: docker/metadata-action@v4
+      #   with:
+      #     images: |
+      #       sidpalas/devops-directive-docker-course-api-node
+      #     tags: |
+      #       type=raw,value=latest
+      #       type=ref,event=branch
+      #       type=ref,event=pr
+      #       type=semver,pattern={{version}}
+      #       type=semver,pattern={{major}}.{{minor}}
+      #       type=raw,value={{date 'YYYYMMDD'}}-{{sha}}
+
+      - name: "Build and push image"
+        uses: azure/docker-login@v1
+        with:
+          login-server: ${{ secrets.ACR_REGISTRY_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_REGISTRY_USERNAME }}
+          password: ${{ secrets.ACR_REGISTRY_PASSWORD }}
+      - run: |
+          docker build ./backend/ -f ./src/MyApi.API/Dockerfile -t ${{ secrets.ACR_REGISTRY_LOGIN_SERVER }}/my-api:${{ github.sha }}
+          docker push ${{ secrets.ACR_REGISTRY_LOGIN_SERVER }}/my-api -a
+
+  # deploy-dev:
+  #   runs-on: ubuntu-latest
+  #   steps:
+
+  # deploy-prd:
+  #   runs-on: ubuntu-latest
+  #   steps:

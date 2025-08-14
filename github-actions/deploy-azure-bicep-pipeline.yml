@@ -1,0 +1,84 @@
+trigger: none
+
+name: Deploy Bicep files
+
+parameters:
+  - name: azureServiceConnection
+    type: string
+    default: '${SERVICE_CONNECTION_NAME}'
+
+jobs:
+  # Deploy to Development environment
+  - job: DeployBicepDev
+    displayName: Deploy Infra to Dev
+    variables:
+      resourceGroup: 'rg-${RESOURCE_GROUP_NAME}-weu'
+      location: 'westeurope'
+      vmImageName: 'ubuntu-latest'
+      templateFile: 'infrastructure/azure.deploy.bicep'
+      parametersFile: 'infrastructure/azure.deploy.parameters.dev.json'
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - task: AzureResourceManagerTemplateDeployment@3
+      inputs:
+        deploymentScope: 'Subscription'
+        subscriptionName: '$(subscription)'
+        azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
+        location: '$(location)'
+        templateLocation: 'Linked artifact'
+        csmFile: '$(templateFile)'
+        csmParametersFile: '$(parametersFile)'
+        deploymentMode: 'Incremental'
+        deploymentOutputs: 'armOutputs'
+
+    - pwsh: |
+      ## armOutputs is already a pipeline variable returned via the ARM deployment
+      ## task's deploymentOutputs attribute
+      $armOutputObj = $env:armOutputs | convertfrom-json
+      $armOutputObj.PSObject.Properties | ForEach-Object {
+        $keyname = $_.Name
+        $value = $_.Value.value
+
+        ## Creates a standard pipeline variable
+        Write-Output "##vso[task.setvariable variable=$keyName;]$value"
+        
+        ## Creates an output variable
+        Write-Output "##vso[task.setvariable variable=$keyName;isOutput=true]$value"
+      }
+
+    # CLI task to enable Azure resource specific features
+    # Postgres Enable UUID-OSSP feature to support generating Guids for EFCore/.NET
+    - task: AzureCLI@2
+      displayName: Azure CLI
+      inputs:
+        azureSubscription: $(subscription)
+        scriptType: ps
+        scriptLocation: inlineScript
+        inlineScript: |
+          az postgres flexible-server parameter set --resource-group $(resourceGroup) --server-name $(PostgresFlexibleName) --subscription $(subscription) --name azure.extensions --value UUID-OSSP
+
+  # Deploy to Production environment
+  - job: DeployBicepPrd
+    dependsOn: DeployBicepDev
+    displayName: Deploy Infra to Prd
+    variables:
+      resourceGroup: 'rg-${RESOURCE_GROUP_NAME}-prd'
+      location: 'westeurope'
+      vmImageName: 'ubuntu-latest'
+      templateFile: 'infrastructure/azure.deploy.bicep'
+      parametersFile: 'infrastructure/azure.deploy.parameters.prd.json'
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - task: AzureResourceManagerTemplateDeployment@3
+      inputs:
+        deploymentScope: 'Subscription'
+        subscriptionName: '$(subscription)'
+        azureResourceManagerConnection: ${{ parameters.azureServiceConnection }}
+        location: '$(location)'
+        templateLocation: 'Linked artifact'
+        csmFile: '$(templateFile)'
+        csmParametersFile: '$(parametersFile)'
+        deploymentMode: 'Incremental'
+        deploymentOutputs: 'armOutputs'
